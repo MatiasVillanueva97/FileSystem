@@ -17,76 +17,87 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <math.h>
+#include <commons/collections/list.h>
 
 
 //File System
-#include <commons/collections/list.h>
+
 //Tabla de Directorios
 typedef struct{
   int index;
   char nombre[255];
   int padre;
 }tablaDeDirectorios;
+
 //Tabla de Nodos
 typedef struct {
-	int nodoTotal;
-	int nodoLibre;
-}listaDeNodos;
+	char* nodo;
+	uint32_t total;
+	uint32_t libre;
+} ContenidoXNodo;
 
 typedef struct {
-	int tamanioTotal;
-	int tamanioLibre;
-	listaDeNodos * nodos;
+	uint32_t tamanio;
+	uint32_t libres;
+	t_list * nodo;
+	t_list * contenidoXNodo;
 }tablaDeNodos;
 
-//Archivo en FileSystem
-typedef struct {
-	int nodo;
-	int bloque;
-}BloqueCopia;
+//Tabla de Archivos
 
 typedef struct {
-	int numeroDeBloque;
-	BloqueCopia copia1;
-	BloqueCopia copia2;
-	double finArchivo;
-}Bloque;
+	char* nodo;
+	uint32_t bloque;
+	uint32_t bytes;
+}BloqueCopia;
 
 typedef struct{
 	int tamanio;
 	int tipo;
-	int directorioPadre;
-	int estado;
+	t_list* bloqueCopia;
+}tablaArchivo;
+
+//info para yama---------------------
+typedef struct {
+	int nodo;
+	int bloque;
+}BloqueCopiaParaArchivo;
+
+typedef struct {
+	int numeroDeBloque;
+	BloqueCopiaParaArchivo copia1;
+	BloqueCopiaParaArchivo copia2;
+	double finArchivo;
+}Bloque;
+
+typedef struct{
+	uint32_t tamaniobytes;
+	uint32_t tipo;
+	uint32_t directorioPadre;
+	uint32_t estado;
 	Bloque bloque;
 }archivoEnFileSystem;
+//----------
+//Bitmap por Nodo
+typedef struct  {
+	char* nodo;
+	t_bitarray 	*bitarray;
+} tablaBitmapXNodos;
 
-typedef struct{
-	BloqueCopia Copia1;
-	BloqueCopia Copia2;
-	double FinBloque;
-}ListaBLoques;
-
-
-//Tabla de Archivos
-
-typedef struct{
-	int tamanio;
-	int tipo; // 1 texto 0 binario
-	ListaBLoques * listaDeBloques;
-}tablaDeArchivos;
 //Variables
+
 tablaDeDirectorios tablaDirectorios[100];
 t_list * tablaArchivos;
 t_list * tablaNodos;
+t_list * tabaBitmapXNodo;
+t_list * listaDeBitMap;
+tablaDeNodos * tablaNodosGlobal;
+
 t_log * logFs;
 t_config * configFs;
 t_bitarray arrayDebits;
 t_config * configFs;
 t_bitarray* bitMap ;
-//prototipos
-void almacenarArchivo(char * PATH,char * nombreArchivo ,int * TipoArchivo,FILE * archivo);
-void leerArchivo(char * PATH);
-soyServidor(char * PUERTO);
-void partir() ;
-void *atenderData(void * argu);
+
 
