@@ -1,39 +1,548 @@
 #include "filesystem.h"
+#include "../../utils/consola.c"
+
+///
+void persistirTablaArchivo(tablaArchivo * archivoStruct){
+	char* path=string_new();
+	string_append(&path,"../yamafs:/metadata/archivo");
+	string_append(&path,string_itoa(archivoStruct->directorioPadre));
+	string_append(&path,"/");
+	char* comando=string_new();
+	string_append(&comando,"mkdir ");
+	string_append(&comando,path);
+	system(comando);
+	string_append(&path,archivoStruct->nombre);
 
 
+	FILE* archivo=fopen(path,"w+");
+
+	fputs("TAMANIO=",archivo);
+	char* tamanioCadena = string_new();
+	tamanioCadena=string_itoa(archivoStruct->tamanio);
+	fputs(tamanioCadena,archivo);
+	free(tamanioCadena);
+	fputc('\n',archivoStruct);
+	fputs("TIPO=",archivo);
+	fputs(archivoStruct->tipo,archivo);
+	fputc('\n',archivo);
+	int i=0;
+	int j = 0;
+	void persistirBloquesDeArchivo(ContenidoBloque * bloquesArchivo){
+		if((j==1) && (i==j)){
+			i = 0;
+		}
+		if(j>1){
+			j=0;
+		}
+		if((j==1) && (i>2)){
+		j =0 ;
+		}
+
+		char * bloque_copia =string_new();
+		char * bloque_bytes = string_new();
+		string_append(&bloque_copia,"BLOQUE");
+		string_append(&bloque_copia,string_itoa(i));
+		string_append(&bloque_copia,"COPIA");
+		string_append(&bloque_copia,string_itoa(j));
+		string_append(&bloque_bytes,"BLOQUE");
+		string_append(&bloque_bytes,string_itoa(i));
+		string_append(&bloque_bytes,"BYTES");
+		char * array =string_duplicate("[");
+		string_append(&array,bloquesArchivo->nodo);
+		string_append(&array,",");
+		string_append(&array,string_itoa(bloquesArchivo->bloque));
+		string_append(&array,"]");
+		fputs(bloque_copia,archivo);
+		fputs("=",archivo);
+		fputs(array,archivo);
+		fputs(bloque_bytes,archivo);
+		fputs("=",archivo);
+		fputs(string_itoa(bloquesArchivo->bytes),archivo);
+		i++;
+		j++;
+	}
+	list_iterate(archivoStruct->bloqueCopias,(void*)persistirBloquesDeArchivo);
+	config_save(persistirArchivo);
+}
+
+
+//
+//	fclose(archivo);
+//
+//	list_add(registroArchivos,path);
+//	persistirRegistroArchivo();
+//
+//}
+
+//
+
+void liberarArrayComando(char** comandoDesarmado){
+	int i = 0;
+	while(comandoDesarmado[i]!=NULL){
+		free(comandoDesarmado[i]);
+		i++;
+	}
+	free(comandoDesarmado);
+}
+
+void liberarDirectorio(tablaDeDirectorios* directorio){
+  free(directorio->nombre);
+  free(directorio);
+}
+
+
+char* obtenerNombreDirectorio(char** rutaDesmembrada){
+  int posicion = 0;
+  char* nombreArchivo = string_new();
+  while(1){
+    if(rutaDesmembrada[posicion+1] == NULL){
+      string_append(&nombreArchivo, rutaDesmembrada[posicion]);
+      break;
+    }
+    posicion++;
+  }
+  return nombreArchivo;
+}
+
+int obtenerDirectorioPadre(char** rutaDesmembrada){
+  char* fathersName = string_new();
+  bool isMyFather(tablaDeDirectorios* directory){
+    return strcmp(fathersName, directory->nombre) == 0;
+  }
+  int posicion = 0;
+  while(1){
+    if(rutaDesmembrada[posicion+1]!=NULL){
+      if(rutaDesmembrada[posicion+2] == NULL){
+        string_append(&fathersName, rutaDesmembrada[posicion]);
+        tablaDeDirectorios* directory = list_find(listaDirectorios, (void*)isMyFather);
+        if(directory == NULL){
+        	free(fathersName);
+        	return -2;
+        }
+        free(fathersName);
+        return directory->index;
+      }
+    }else if(rutaDesmembrada[posicion+1]==NULL){
+    	free(fathersName);
+      return -1;
+    }
+    posicion++;
+  }
+}
+
+tablaDeDirectorios* createDirectory(){
+  tablaDeDirectorios* newDirectory = malloc(sizeof(tablaDeDirectorios));
+  return newDirectory;
+}
+
+//MOVER DIRECTORIO
+
+void moveDirectory(char* oldPath, char* newPath){
+  char** rutaDesmembradaVieja = string_split(oldPath, "/");
+  char** rutaDesmembradaNueva = string_split(newPath, "/");
+  char* nombreDirectorio = obtenerNombreDirectorio(rutaDesmembradaVieja);
+  int indexPadreNuevo = obtenerDirectorioPadre(rutaDesmembradaNueva);
+  if(indexPadreNuevo == -1 || indexPadreNuevo==-2){
+	  liberarArrayComando(rutaDesmembradaNueva);
+    liberarArrayComando(rutaDesmembradaVieja);
+    free(nombreDirectorio);
+    printf("Error al encontrar el directorio padre del path final");
+  }
+  bool esDirectorio(tablaDeDirectorios* directorio){
+    return strcmp(directorio->nombre, nombreDirectorio) == 0;
+  }
+
+  tablaDeDirectorios* directorioAModificar = list_find(listaDirectorios, (void*)esDirectorio);
+  if(directorioAModificar == NULL){
+	  liberarArrayComando(rutaDesmembradaNueva);
+    liberarArrayComando(rutaDesmembradaVieja);
+    free(nombreDirectorio);
+    printf("No se ha encontrar el directorio en el sistema");
+  }
+  directorioAModificar->padre = indexPadreNuevo;
+  //persistirDirectorio();
+  liberarArrayComando(rutaDesmembradaNueva);
+  liberarArrayComando(rutaDesmembradaVieja);
+  free(nombreDirectorio);
+}
+
+//EXISTE DIRECTORIO
+
+bool existeDirectorio(char* ruta){
+  char** rutaDesmembrada = string_split(ruta, "/");
+  char* nombreDirectory = obtenerNombreDirectorio(rutaDesmembrada);
+  bool esDirectorio(tablaDeDirectorios* directory){
+    return strcmp(directory->nombre, nombreDirectory)==0;
+  }
+  bool yaExiste = list_any_satisfy(listaDirectorios, (void*)esDirectorio);
+  //AVERIGUAR SI HAY QUE VERIFICAR TAMBIEN EL PADRE
+  free(nombreDirectory);
+  liberarArrayComando(rutaDesmembrada);
+  return yaExiste;
+}
+
+//CREAR DIRECTORIO
+
+int crearDirectorio(char* ruta){
+  if(list_size(listaDirectorios)<=100){
+      uint32_t indexDir = list_size(listaDirectorios);
+      tablaDeDirectorios* newDirectory = createDirectory();
+      char** rutaDesmembrada = string_split(ruta, "/");
+      newDirectory->nombre = obtenerNombreDirectorio(rutaDesmembrada);
+      newDirectory->padre = obtenerDirectorioPadre(rutaDesmembrada);
+      newDirectory->index = indexDir;
+      if(newDirectory->padre == -2){
+    	  liberarArrayComando(rutaDesmembrada);
+        liberarDirectorio(newDirectory);
+        printf("Error de directorio padre de la ruta elegida");
+        return 0;
+      }
+      list_add(listaDirectorios, newDirectory);
+      liberarArrayComando(rutaDesmembrada);
+  //    persistirDirectorio();
+      printf("Se creo correctamente el directorio");
+      return 1;
+  }else{
+	  printf("No se pudo crear el directorio, se llego al limite");
+	  return -1;
+  }
+}
+
+//RENOMBRAR DIRECTORIO
+
+void renameDirectory(char* oldName, char* newName){
+  char** rutaDesmembradaVieja = string_split(oldName, "/");
+  char** rutaDesmembradaNueva = string_split(newName, "/");
+  char* viejoNombre = obtenerNombreDirectorio(rutaDesmembradaVieja);
+  char* nuevoNombre = obtenerNombreDirectorio(rutaDesmembradaNueva);
+  bool encontrarPorNombre(tablaDeDirectorios* directorio){
+    return strcmp(viejoNombre, directorio->nombre);
+  }
+  tablaDeDirectorios* directoryToChange = list_find(listaDirectorios, (void*)encontrarPorNombre);
+  if(directoryToChange != NULL){
+    free(directoryToChange->nombre);
+    directoryToChange->nombre = string_new();
+    string_append(&directoryToChange->nombre, nuevoNombre);
+    liberarArrayComando(rutaDesmembradaNueva);
+    liberarArrayComando(rutaDesmembradaVieja);
+
+  //  persistirDirectorio();
+
+    free(viejoNombre);
+    free(nuevoNombre);
+    printf("Se ha renombrado exitosamente el directori/archivo.");
+  }else{
+	  liberarArrayComando(rutaDesmembradaNueva);
+    liberarArrayComando(rutaDesmembradaVieja);
+    free(viejoNombre);
+    free(nuevoNombre);
+    printf("El directorio que se pide renombrar no existe.");
+  }
+}
+
+//OBTENER INDEX DE LA TABLA DIRECTORIO
+
+int obtenerIndexDirectorio(char* nombre){
+  bool esDirectorio(tablaDeDirectorios* direct){
+    return strcmp(nombre, direct->nombre);
+  }
+  tablaDeDirectorios* directorio = list_find(listaDirectorios,(void*) esDirectorio);
+  if(directorio != NULL){
+    return directorio->index;
+  }
+  return -2;
+
+}
+
+//BORRAR DIRECTORIO
+
+int deleteDirectory(char* directoryToDelete){
+  char** rutaDesmembrada = string_split(directoryToDelete, "/");
+  char* directoryName = obtenerNombreDirectorio(rutaDesmembrada);
+  int indexToDelete = obtenerIndexDirectorio(directoryName);
+  if(indexToDelete == -2){
+    free(directoryName);
+    liberarArrayComando(rutaDesmembrada);
+
+    return 0; //NO EXISTE DIRECTORIO
+  }
+  bool esDirectorio(tablaDeDirectorios* directorio){
+    return strcmp(directorio->nombre, directoryName);
+  }
+  bool tieneHijos(tablaDeDirectorios* directorio){
+    return directorio->padre == indexToDelete;
+  }
+  if(!list_any_satisfy(listaDirectorios, (void*)tieneHijos)){
+    tablaDeDirectorios* directoryToRemove = list_remove_by_condition(listaDirectorios, (void*)esDirectorio);
+    //persistirDirectorio();
+
+    void liberarArrayComando(char** comandoDesarmado){
+    	int i = 0;
+    	while(comandoDesarmado[i]!=NULL){
+    		free(comandoDesarmado[i]);
+    		i++;
+    	}
+    	free(comandoDesarmado);
+    }
+
+    void liberarDirectorio(tablaDeDirectorios* directorio){
+      free(directorio->nombre);
+      free(directorio);
+    }
+
+
+    char* obtenerNombreDirectorio(char** rutaDesmembrada){
+      int posicion = 0;
+      char* nombreArchivo = string_new();
+      while(1){
+        if(rutaDesmembrada[posicion+1] == NULL){
+          string_append(&nombreArchivo, rutaDesmembrada[posicion]);
+          break;
+        }
+        posicion++;
+      }
+      return nombreArchivo;
+    }
+
+    int obtenerDirectorioPadre(char** rutaDesmembrada){
+      char* fathersName = string_new();
+      bool isMyFather(tablaDeDirectorios* directory){
+        return strcmp(fathersName, directory->nombre) == 0;
+      }
+      int posicion = 0;
+      while(1){
+        if(rutaDesmembrada[posicion+1]!=NULL){
+          if(rutaDesmembrada[posicion+2] == NULL){
+            string_append(&fathersName, rutaDesmembrada[posicion]);
+            tablaDeDirectorios* directory = list_find(listaDirectorios, (void*)isMyFather);
+            if(directory == NULL){
+            	free(fathersName);
+            	return -2;
+            }
+            free(fathersName);
+            return directory->index;
+          }
+        }else if(rutaDesmembrada[posicion+1]==NULL){
+        	free(fathersName);
+          return -1;
+        }
+        posicion++;
+      }
+    }
+
+    tablaDeDirectorios* createDirectory(){
+      tablaDeDirectorios* newDirectory = malloc(sizeof(tablaDeDirectorios));
+      return newDirectory;
+    }
+
+    //MOVER DIRECTORIO
+
+    void moveDirectory(char* oldPath, char* newPath){
+      char** rutaDesmembradaVieja = string_split(oldPath, "/");
+      char** rutaDesmembradaNueva = string_split(newPath, "/");
+      char* nombreDirectorio = obtenerNombreDirectorio(rutaDesmembradaVieja);
+      int indexPadreNuevo = obtenerDirectorioPadre(rutaDesmembradaNueva);
+      if(indexPadreNuevo == -1 || indexPadreNuevo==-2){
+    	  liberarArrayComando(rutaDesmembradaNueva);
+        liberarArrayComando(rutaDesmembradaVieja);
+        free(nombreDirectorio);
+        printf("Error al encontrar el directorio padre del path final");
+      }
+      bool esDirectorio(tablaDeDirectorios* directorio){
+        return strcmp(directorio->nombre, nombreDirectorio) == 0;
+      }
+
+      tablaDeDirectorios* directorioAModificar = list_find(listaDirectorios, (void*)esDirectorio);
+      if(directorioAModificar == NULL){
+    	  liberarArrayComando(rutaDesmembradaNueva);
+        liberarArrayComando(rutaDesmembradaVieja);
+        free(nombreDirectorio);
+        printf("No se ha encontrar el directorio en el sistema");
+      }
+      directorioAModificar->padre = indexPadreNuevo;
+     // persistirDirectorio();
+      liberarArrayComando(rutaDesmembradaNueva);
+      liberarArrayComando(rutaDesmembradaVieja);
+      free(nombreDirectorio);
+    }
+
+    //EXISTE DIRECTORIO
+
+    bool existeDirectorio(char* ruta){
+      char** rutaDesmembrada = string_split(ruta, "/");
+      char* nombreDirectory = obtenerNombreDirectorio(rutaDesmembrada);
+      bool esDirectorio(tablaDeDirectorios* directory){
+        return strcmp(directory->nombre, nombreDirectory)==0;
+      }
+      bool yaExiste = list_any_satisfy(listaDirectorios, (void*)esDirectorio);
+      //AVERIGUAR SI HAY QUE VERIFICAR TAMBIEN EL PADRE
+      free(nombreDirectory);
+      liberarArrayComando(rutaDesmembrada);
+      return yaExiste;
+    }
+
+    //CREAR DIRECTORIO
+
+    int crearDirectorio(char* ruta){
+      if(list_size(listaDirectorios)<=100){
+          uint32_t indexDir = list_size(listaDirectorios);
+          tablaDeDirectorios* newDirectory = createDirectory();
+          char** rutaDesmembrada = string_split(ruta, "/");
+          newDirectory->nombre = obtenerNombreDirectorio(rutaDesmembrada);
+          newDirectory->padre = obtenerDirectorioPadre(rutaDesmembrada);
+          newDirectory->index = indexDir;
+          if(newDirectory->padre == -2){
+        	  liberarArrayComando(rutaDesmembrada);
+            liberarDirectorio(newDirectory);
+            printf("Error de directorio padre de la ruta elegida");
+            return 0;
+          }
+          list_add(listaDirectorios, newDirectory);
+          liberarArrayComando(rutaDesmembrada);
+         // persistirDirectorio();
+          printf("Se creo correctamente el directorio");
+          return 1;
+      }else{
+    	  printf("No se pudo crear el directorio, se llego al limite");
+    	  return -1;
+      }
+    }
+
+    //RENOMBRAR DIRECTORIO
+
+    void renameDirectory(char* oldName, char* newName){
+      char** rutaDesmembradaVieja = string_split(oldName, "/");
+      char** rutaDesmembradaNueva = string_split(newName, "/");
+      char* viejoNombre = obtenerNombreDirectorio(rutaDesmembradaVieja);
+      char* nuevoNombre = obtenerNombreDirectorio(rutaDesmembradaNueva);
+      bool encontrarPorNombre(tablaDeDirectorios* directorio){
+        return strcmp(viejoNombre, directorio->nombre);
+      }
+      tablaDeDirectorios* directoryToChange = list_find(listaDirectorios, (void*)encontrarPorNombre);
+      if(directoryToChange != NULL){
+        free(directoryToChange->nombre);
+        directoryToChange->nombre = string_new();
+        string_append(&directoryToChange->nombre, nuevoNombre);
+        liberarArrayComando(rutaDesmembradaNueva);
+        liberarArrayComando(rutaDesmembradaVieja);
+
+      //  persistirDirectorio();
+
+        free(viejoNombre);
+        free(nuevoNombre);
+        printf("Se ha renombrado exitosamente el directori/archivo.");
+      }else{
+    	  liberarArrayComando(rutaDesmembradaNueva);
+        liberarArrayComando(rutaDesmembradaVieja);
+        free(viejoNombre);
+        free(nuevoNombre);
+        printf("El directorio que se pide renombrar no existe.");
+      }
+    }
+
+    //OBTENER INDEX DE LA TABLA DIRECTORIO
+
+    int obtenerIndexDirectorio(char* nombre){
+      bool esDirectorio(tablaDeDirectorios* direct){
+        return strcmp(nombre, direct->nombre);
+      }
+      tablaDeDirectorios* directorio = list_find(listaDirectorios,(void*) esDirectorio);
+      if(directorio != NULL){
+        return directorio->index;
+      }
+      return -2;
+
+    }
+
+    //BORRAR DIRECTORIO
+
+    int deleteDirectory(char* directoryToDelete){
+      char** rutaDesmembrada = string_split(directoryToDelete, "/");
+      char* directoryName = obtenerNombreDirectorio(rutaDesmembrada);
+      int indexToDelete = obtenerIndexDirectorio(directoryName);
+      if(indexToDelete == -2){
+        free(directoryName);
+        liberarArrayComando(rutaDesmembrada);
+
+        return 0; //NO EXISTE DIRECTORIO
+      }
+      bool esDirectorio(tablaDeDirectorios* directorio){
+        return strcmp(directorio->nombre, directoryName);
+      }
+      bool tieneHijos(tablaDeDirectorios* directorio){
+        return directorio->padre == indexToDelete;
+      }
+      if(!list_any_satisfy(listaDirectorios, (void*)tieneHijos)){
+        tablaDeDirectorios* directoryToRemove = list_remove_by_condition(listaDirectorios, (void*)esDirectorio);
+
+      //  persistirDirectorio();
+
+        liberarDirectorio(directoryToRemove);
+        liberarArrayComando(rutaDesmembrada);
+        free(directoryName);
+        return 1;
+      }else{
+        free(directoryName);
+        liberarArrayComando(rutaDesmembrada);
+
+        return -1; //EL DIRECTORIO TIENE SUBDIRECTORIOS
+      }
+    }
+
+    liberarDirectorio(directoryToRemove);
+    liberarArrayComando(rutaDesmembrada);
+    free(directoryName);
+    return 1;
+  }else{
+    free(directoryName);
+    liberarArrayComando(rutaDesmembrada);
+
+    return -1; //EL DIRECTORIO TIENE SUBDIRECTORIOS
+  }
+}
+
+////
 int countSplit(char ** array){
 		int size;
 		for (size = 0; array[size] != NULL; size++);
 		return size;
 	}
+void liberarArray2(char ** lista){
+	int i = 0;
+	for (i = 0; i < countSplit(lista); i++)
+			free(lista[i]);
+	free(lista);
+}
+void liberarArray(char ** lista,int cantidad){
+	int i = 0;
+	for (i = 0; i < cantidad; i++)
+			free(lista[i]);
+	free(lista);
+}
 	void cargarListaDeNodosAnteriores(){
 		char ** arrayDeNodosAnteriores = config_get_array_value(persistirNodos,"NODOS");
 
 			int i = 0;
 					for(;i<countSplit(arrayDeNodosAnteriores);i++){
-						list_add(listaDeNodosAnteriores,arrayDeNodosAnteriores[i]);
+						char * nombreNodo = string_new();
+						string_append(&nombreNodo,arrayDeNodosAnteriores[i]);
+						list_add(listaDeNodosDeEstadoAnterior,nombreNodo);
 						printf("%s\n",arrayDeNodosAnteriores[i]);
 					}
 						liberarArray2(arrayDeNodosAnteriores);
-	}
-	void liberarArray2(char ** lista){
-		int i = 0;
-		for (i = 0; i < countSplit(lista); i++)
-				free(lista[i]);
-		free(lista);
-	}
-	void liberarArray(char ** lista,int cantidad){
-		int i = 0;
-		for (i = 0; i < cantidad; i++)
-				free(lista[i]);
-		free(lista);
 	}
 
 bool buscarEnListaAnterior(char * nombre){
 	bool buscarEnLISTA(char * nombreDentroDeLista) {
 			return strcmp(nombreDentroDeLista, nombre) == 0;
 		}
-		return list_any_satisfy(listaDeNodosAnteriores,(void*)buscarEnLISTA);
+		return list_any_satisfy(listaDeNodosDeEstadoAnterior,(void*)buscarEnLISTA);
+}
+bool buscarEnListaDeFormat(char * nombre){
+	bool buscarEnLISTA(char * nombreDentroDeLista) {
+			return strcmp(nombreDentroDeLista, nombre) == 0;
+		}
+		return list_any_satisfy(listaDeNodosDeFormateo,(void*)buscarEnLISTA);
 }
 int cantidadBloquesAMandar(char * PATH) {
 	FILE* archivo = fopen(PATH, "r+");
@@ -182,8 +691,8 @@ tablaArchivo * buscarArchivoPorNombre(char * nombreArchivo) {
 }
 
 void persistirNodosFuncion(){
-		char * nombre = string_duplicate("[");
-		FILE * archivo = fopen ("/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/filesystem/metadata/nodos.bin","w+");
+	char * nombre = string_duplicate("[");
+	FILE * archivo = fopen ("../yamafs:/metadata/nodos.bin","w+");
 	fputs("TAMANO_TOTAL",archivo);
 	fputs("=",archivo);
 	fputs(string_itoa(sumatoriaDeBloquesTotal()),archivo);
@@ -261,7 +770,7 @@ void crearBitmapDeNodosConectados(char * NodoConectado, int cantBloques) {
 	void crearBitmapXNodo(char * nodoConectado) {
 
 		char * PATH_bitmap_xNOdo = string_new();
-		string_append(&PATH_bitmap_xNOdo, "/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/filesystem/bitmaps/");
+		string_append(&PATH_bitmap_xNOdo, "../yamafs:/bitmaps/");
 		string_append(&PATH_bitmap_xNOdo, nodoConectado);
 		string_append(&PATH_bitmap_xNOdo, ".dat");
 		crearBitmap(PATH_bitmap_xNOdo, nodoConectado, cantBloques);
@@ -278,68 +787,59 @@ void registrarNodo(int socketData ) {
 		char *nombre = arrayMensajesRecibidos[0];
 		int cantBloques=atoi(arrayMensajesRecibidos[1]);
 
-		if(estable==false){
-			cargarListaDeNodosAnteriores();
-			if(buscarEnListaAnterior(arrayMensajesRecibidos[0])){
 
-				crearBitmapDeNodosConectados(nombre,cantBloques);
-					tablaBitmapXNodos * nodoConBitmap = buscarNodoPorNombreB(arrayMensajesRecibidos[0]);
-					ContenidoXNodo * nodo = malloc(sizeof(ContenidoXNodo));
-					nodo->nodo = arrayMensajesRecibidos[0];
-					nodo->ip = arrayMensajesRecibidos[2];
-					nodo->libre = cantidadDeBloquesLibresEnBitmap(nodoConBitmap->bitarray, atoi(arrayMensajesRecibidos[1]));
-					nodo->puerto = arrayMensajesRecibidos[3];
-					nodo->socket = socketData;
-					nodo->total = atoi(arrayMensajesRecibidos[1]);
+		if(estadoAnterior==0){
+		if(formateado==0){//dejo conectar a cualquiera
 
-					printf("%s\n",nodo->nodo);
-					printf("%s\n",nodo->ip);
-					printf("%d\n",nodo->libre);
-					printf("%s\n",nodo->puerto);
-					printf("%d\n",nodo->socket);
-					printf("%d\n",nodo->total);
-					/*if{
+		crearBitmapDeNodosConectados(nombre,cantBloques);
+		tablaBitmapXNodos * nodoConBitmap = buscarNodoPorNombreB(arrayMensajesRecibidos[0]);
+		ContenidoXNodo * nodo = malloc(sizeof(ContenidoXNodo));
+		nodo->nodo = arrayMensajesRecibidos[0];
+		nodo->ip = arrayMensajesRecibidos[2];
+		nodo->libre = cantidadDeBloquesLibresEnBitmap(nodoConBitmap->bitarray, atoi(arrayMensajesRecibidos[1]));
+		nodo->puerto = arrayMensajesRecibidos[3];
+		nodo->socket = socketData;
+		nodo->total = atoi(arrayMensajesRecibidos[1]);
 
-					}*/
+		list_add(tablaNodos, nodo);
+		list_add(listaDeNodosDeFormateo,arrayMensajesRecibidos[0]);
+		}
+		if(formateado==1 && estadoEstable==1){
+			if(buscarEnListaDeFormat(arrayMensajesRecibidos[0])){
 
-					list_add(tablaNodos, nodo);
-
+						crearBitmapDeNodosConectados(nombre,cantBloques);
+						tablaBitmapXNodos * nodoConBitmap = buscarNodoPorNombreB(arrayMensajesRecibidos[0]);
+						ContenidoXNodo * nodo = malloc(sizeof(ContenidoXNodo));
+						nodo->nodo = arrayMensajesRecibidos[0];
+						nodo->ip = arrayMensajesRecibidos[2];
+						nodo->libre = cantidadDeBloquesLibresEnBitmap(nodoConBitmap->bitarray, atoi(arrayMensajesRecibidos[1]));
+						nodo->puerto = arrayMensajesRecibidos[3];
+						nodo->socket = socketData;
+						nodo->total = atoi(arrayMensajesRecibidos[1]);
+						list_add(tablaNodos, nodo);
 			}else {
-				printf("%s No Perteneciente al estado anterior",arrayMensajesRecibidos[0]);
+					enviarHeaderSolo(socketData,TIPO_MSJ_HANDSHAKE_RESPUESTA_DENEGADO);
 			}
 
 		}
-		if(formateo==true){
-		tablaBitmapXNodos * hola = buscarNodoPorNombreB(arrayMensajesRecibidos[0]);
-		if(hola==NULL){
-			printf("NO ME DEVOLVIO NADA\n");
-			enviarHeaderSolo(socketData,MUERTE);
 		}
-		int a =3 ;
-		printf("%d\n",a);
+		if(estadoAnterior==1){
+			if(buscarEnListaAnterior(arrayMensajesRecibidos[0])){
 
+						crearBitmapDeNodosConectados(nombre,cantBloques);
+						tablaBitmapXNodos * nodoConBitmap = buscarNodoPorNombreB(arrayMensajesRecibidos[0]);
+						ContenidoXNodo * nodo = malloc(sizeof(ContenidoXNodo));
+						nodo->nodo = arrayMensajesRecibidos[0];
+						nodo->ip = arrayMensajesRecibidos[2];
+						nodo->libre = cantidadDeBloquesLibresEnBitmap(nodoConBitmap->bitarray, atoi(arrayMensajesRecibidos[1]));
+						nodo->puerto = arrayMensajesRecibidos[3];
+						nodo->socket = socketData;
+						nodo->total = atoi(arrayMensajesRecibidos[1]);
+						list_add(tablaNodos, nodo);
+			}else {
+				enviarHeaderSolo(socketData,TIPO_MSJ_HANDSHAKE_RESPUESTA_DENEGADO);
+			}
 		}
-	crearBitmapDeNodosConectados(nombre,cantBloques);
-	tablaBitmapXNodos * nodoConBitmap = buscarNodoPorNombreB(arrayMensajesRecibidos[0]);
-	ContenidoXNodo * nodo = malloc(sizeof(ContenidoXNodo));
-	nodo->nodo = arrayMensajesRecibidos[0];
-	nodo->ip = arrayMensajesRecibidos[2];
-	nodo->libre = cantidadDeBloquesLibresEnBitmap(nodoConBitmap->bitarray, atoi(arrayMensajesRecibidos[1]));
-	nodo->puerto = arrayMensajesRecibidos[3];
-	nodo->socket = socketData;
-	nodo->total = atoi(arrayMensajesRecibidos[1]);
-
-	printf("%s\n",nodo->nodo);
-	printf("%s\n",nodo->ip);
-	printf("%d\n",nodo->libre);
-	printf("%s\n",nodo->puerto);
-	printf("%d\n",nodo->socket);
-	printf("%d\n",nodo->total);
-	/*if{
-
-	}*/
-
-	list_add(tablaNodos, nodo);
 
 }
 
@@ -357,7 +857,7 @@ char * conseguirNombreDePath(char * PATH) {
 void persistirArchivos(char * nombre ){
 
 								tablaArchivo * elemento = buscarArchivoPorNombre(nombre);
-								char * path = string_duplicate("/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/filesystem/metadata/archivos/");
+								char * path = string_duplicate("../yamafs:/metadata/archivos/");
 								string_append(&path,string_itoa(elemento->directorioPadre));
 								string_append(&path,"/");
 								string_append(&path,elemento->nombre);
@@ -653,9 +1153,9 @@ void partirArchivoBinario(char* PATH) {
 
 
 
-void partirArchivoDeTexto(char * PATH) {
+void partirArchivoDeTexto(char* pathArchivo, char* pathDirectorio,char* tipo) {
 
-	FILE*archivo = fopen(PATH, "r+");
+	FILE*archivo = fopen(pathArchivo, "r+");
 	int fd = fileno(archivo);
 	struct stat buff;
 	fstat(fd, &buff);
@@ -669,9 +1169,27 @@ void partirArchivoDeTexto(char * PATH) {
 	void * contenidoAEnviar;
 	int * posicionBarraN;
 	int * posicionArchivoTerminado;
-	char * nombre = conseguirNombreDePath(PATH);
+	char * nombre = conseguirNombreDePath(pathArchivo);
 	tablaArchivo * nuevoArchivo = malloc(sizeof(tablaArchivo));
 	nuevoArchivo->bloqueCopias = list_create();
+	char** rutaDirectorio = string_split(pathDirectorio,"/");
+	//if(sumatoriaDeBloquesLibres()>=(cantidadBloquesAMandar(pathArchivo))*2){
+
+	if(existeDirectorio(pathDirectorio)==false){
+	printf("El directorio que se ingreso no existe\n");
+	}
+	//string_append(&pathDirectorio,nombre);
+
+
+///
+
+	///
+
+
+
+	printf("Se procede a almacenar el archivo %s en %s.\n", nuevoArchivo->nombre, pathDirectorio);
+
+
 
 	t_list * posiciones = list_create();
 
@@ -714,8 +1232,8 @@ void partirArchivoDeTexto(char * PATH) {
 	void partir(int * posicion) {
 		nuevoArchivo->tamanio = tamano;
 		nuevoArchivo->nombre = nombre;
-		nuevoArchivo->directorioPadre = 1;
-		nuevoArchivo->tipo = 1;
+		nuevoArchivo->directorioPadre = obtenerDirectorioPadre(rutaDirectorio);
+		nuevoArchivo->tipo = tipo;
 		log_info(logFs, "Archivo %s", nuevoArchivo->nombre);
 		ContenidoBloque * contenido = malloc(sizeof(ContenidoBloque));
 
@@ -934,27 +1452,26 @@ void partirArchivoDeTexto(char * PATH) {
 		}
 		posicionActual++;
 	}
-	if(sumatoriaDeBloquesLibres()>=(cantidadBloquesAMandar(PATH))*2){
 
 	list_iterate(posiciones, (void*) partir);
 	list_add(tablaArchivos, nuevoArchivo);
-	persistirArchivos(nombre);
+	persistirTablaArchivo(nuevoArchivo);
 	persistirNodosFuncion();
 	fclose(archivo);
 	free(contenidoAEnviar);
-	}
-	else {
-		char * holi = conseguirNombreDePath(PATH);
+	//}
+	/*else {
+		char * holi = conseguirNombreDePath(pathArchivo);
 		printf("No hay espacio para partir el archivo %s \n",holi);
-	}
+	}*/
 }
 
-void almacenarArchivo(char * PATH, int TipoArchivo) {
+void almacenarArchivo(char * PATH,char * pathDirectorio, int TipoArchivo) {
 
 	if (TipoArchivo == 1) {
 		partirArchivoBinario(PATH);
 	} else {
-		partirArchivoDeTexto(PATH);
+		partirArchivoDeTexto(PATH, pathDirectorio,TipoArchivo);
 	}
 }
 
@@ -1015,8 +1532,7 @@ void leerArchivo(char * PATH) {
 		//printearArrayOriginal();
 }
 
-void enviarInfoBloques(int socketCliente) {
-	int32_t headerId = deserializarHeader(socketCliente);
+void enviarInfoBloques(int socketCliente,int headerId) {
 	printf("id: %d\n", headerId);
 	printf("mensaje predefinido: %s\n", protocoloMensajesPredefinidos[headerId]);
 	int cantidadMensajes = protocoloCantidadMensajes[headerId];
@@ -1159,131 +1675,79 @@ void soyServidor(char * puerto) {
 	FD_ZERO(&SocketsDataNodes);
 	FD_SET(listener, &master);
 	escuchar(listener);
-	estable = config_get_string_value(configFs,"ESTADO");
 
 	while (1) {
 		SocketsDataNodes = master;
 		if (select(fdmax + 1, &SocketsDataNodes, NULL, NULL, NULL) == -1) {
-			perror("select");
-			exit(4);
-		}
+					perror("select");
+					exit(4);
+				}
 
-		for (i = 0; i <= fdmax; i++) {
-			if (FD_ISSET(i, &SocketsDataNodes)) {
-				if (i == listener) {
-					addrlen = sizeof remoteaddr;
-					nuevoSocket = accept(listener, (struct sockaddr *) &remoteaddr, &addrlen);
+				for (i = 0; i <= fdmax; i++) {
+					if (FD_ISSET(i, &SocketsDataNodes)) {
+						if (i == listener) {
+							addrlen = sizeof remoteaddr;
+							nuevoSocket = accept(listener, (struct sockaddr *) &remoteaddr, &addrlen);
 
-					if (nuevoSocket == -1) {
-						perror("accept");
-					} else {
-						FD_SET(nuevoSocket, &master);
-						recv(nuevoSocket, &quiensoy, sizeof(int), MSG_WAITALL); //Devuelve -1 en error
-						switch (quiensoy) {
-
-						case yama: {
-							if (estable) {
-								SocketYama = nuevoSocket;
-								enviarInfoNodos(SocketYama);
-								puts("conectado");
+							if (nuevoSocket == -1) {
+								perror("accept");
 							} else {
-								puts("todavia no es estado estable");
+								FD_SET(nuevoSocket, &master);
+								recv(nuevoSocket, &quiensoy, sizeof(int), MSG_WAITALL); //Devuelve -1 en error
+								switch (quiensoy) {
+
+								case yama: {
+									if (estadoEstable) {
+										SocketYama = nuevoSocket;
+										enviarHeaderSolo(SocketYama,TIPO_MSJ_HANDSHAKE_RESPUESTA_OK);
+									} else {
+										enviarHeaderSolo(SocketYama,TIPO_MSJ_HANDSHAKE_RESPUESTA_DENEGADO);
+									}
+								}
+									break;
+								case worker: {
+									SocketWorker = nuevoSocket;
+								}
+									break;
+								case datanode: {
+									registrarNodo(nuevoSocket);
+									printf("antes directorio \n");
+									crearDirectorio("hola");
+									printf("cree directorio\n");
+									almacenarArchivo("/home/utnso/Escritorio/Nuevo.txt","../yamafs:/hola",0);
+									printf("parti archivo\n");
+									persistirNodosFuncion();
+									FD_CLR(nuevoSocket, &master);
+								}
+									break;
+								}
+								if (nuevoSocket > fdmax) {
+									fdmax = nuevoSocket;
+								}
+							}
+						} else {
+							int32_t headerId = deserializarHeader(i);
+							printf("headerId: %d\n", headerId);
+							if (headerId <= 0) { //error o desconexión de un cliente
+								printf("cerró el socket :%d\n", i);
+								eliminarDeLasListas(i);
+								cerrarCliente(i); // bye!
+								FD_CLR(i, &master); // remove from master set
+							} else {
+								if (i == SocketYama) {
+									enviarInfoBloques(SocketYama, headerId);
+									enviarInfoNodos(SocketYama);
+									puts("soy yama");
+								}
+								if (i == SocketWorker) {
+									puts("soy worker");
+								}
 							}
 						}
-							break;
-						case worker: {
-							if(estable){
-							SocketWorker = nuevoSocket;
-							//atender a worker,supongo que almacenar el archivo
-							}
-						}
-							break;
-						case datanode: {
-							registrarNodo(nuevoSocket);
-							//formateo=true;
-						//	sleep(3);
-							//partirArchivoDeTexto("/home/utnso/Escritorio/FileSystem.h");
-
-
-							printf("A dormir \n");
-							//sleep(1);
-							//leerArchivo("/home/utnso/Escritorio/FileSystem.h");
-							persistirNodosFuncion();
-
-							estable = true;
-						}
-							break;
-						}
-						if (nuevoSocket > fdmax) {
-							fdmax = nuevoSocket;
-						}
 					}
-				} else {
-					if(i == SocketYama){
-						enviarInfoBloques(SocketYama);
-						puts("soy yama");
-					}
-					if(i == SocketWorker){
-						puts("soy worker");
-					}
-					int32_t header = deserializarHeader(i);
-					if(header <=MUERTE){
-
-						//partirArchivoDeTexto("/home/utnso/Escritorio/FileSystem.h");
-						//partirArchivoBinario("/home/utnso/Escritorio/FileSystem.h");
-						printf("se murio me toma bien xd \n");
-						eliminarDeLasListas(i);
-						ContenidoBloque * x = buscarNodoPorSocketS(i);
-						if(x==NULL){
-							printf("Eliminado bien \n");
-						}
-						//avisar socket muerto a yama
-					}
-					//Devuelve -1 en error
-					/* esto sirve para cuando ya estan conectados ,
-				 si te envian mensajes la funcion
-				 recibirmensaje era parte de mi serializacion
-				 void * stream;
-				 Mensaje mensaje = recibirMensaje(i, &stream);
-				 if (mensaje.accion <= 0) {
-				 if (mensaje.accion == 0) {*/
-					//partirArchivoDeTexto("/home/utnso/Escritorio/Nuevo.txt");
-
-
-//hacer eliminar algun dia		ContenidoXNodo * hola2 = list_remove_by_condition(tablaNodos,buscarNodoPorNombreS("NODO_1"));
-					printf("Se murio socket %d \n", i); ///hacer log
-					/*} else {
-					 perror("Hubo un error que no deberia pasar");
-					 }*/
-					close(i); //se cierra el socket conectado,si se comenta esto
-					//el socket no cierra de este lado por ende podria seguir recibiendo mensajes
-					FD_CLR(i, &master);
-					/*} else {
-					 if (i == SocketYama) {
-					 //cosas que haga yama
-					 switch (mensaje.accion) {
-					 case INT:{
-					 printf("%d",*(int*)stream);
-					 }
-					 break;
-					 case ARCHIVO: {
-
-					 }
-					 break;
-					 case CADENA: {
-					 }
-					 break;
-					 }
-					 } else {
-					 //soy datanode
-					 }
-
-					 }*/
 				}
 			}
 		}
-	}
-}
 
 	char *  devolverPathAbsoluto(char * pathYamaFS){
 		char * pathAbsoluto = string_new();
@@ -1292,27 +1756,147 @@ void soyServidor(char * puerto) {
 		return pathAbsoluto;
 		free(pathAbsoluto);
 	}
-int main() {
+	void matarTodo(){
+		printf("te mate gato \n");
+	}
+	void inicializarCarpetas(){
+		tablaDeDirectorios * nuevoDirectorio = malloc(sizeof(tablaDeDirectorios));
+		char * yamafs =string_new();
+		char * metadata=string_new();
+		char * archivos=string_new();
+		char * bitmaps=string_new();
+		string_append(&metadata,"mkdir ");
+		string_append(&metadata,"../yamafs:/metadata");
+		string_append(&archivos,"mkdir ");
+		string_append(&archivos,"../yamafs:/metadata/archivos");
+		string_append(&bitmaps,"mkdir ");
+		string_append(&bitmaps,"../yamafs:/bitmaps");
+		string_append(&yamafs,"mkdir ");
+		string_append(&yamafs,"../yamafs:");
+		system(yamafs);
+		nuevoDirectorio->index=0;
+		nuevoDirectorio->padre=-1;
+		nuevoDirectorio->nombre="yamafs:";
+		system(metadata);
+		system(archivos);
+		system(bitmaps);
+		free(yamafs);
+		free(metadata);
+		free(archivos);
+		free(bitmaps);
+	}
 
-	char * PUERTO;
-	logFs = log_create("/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/filesystem/FileSystem.log", "FileSystem", 0, 0);
-	FILE * directorios = fopen("/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/filesystem/directorios.dat", "w+");
-	FILE * nodos = fopen("/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/filesystem/nodo.bin", "wb");
+	bool hayEstadoEstable(){
+		int countGeneral =0 ;
+	void	porArchivo(	tablaArchivo * elemento){
+		int i = 0;
+		int count =0;
+	bloqueVector a[cantidadBloquesAMandar(elemento->ruta)];
+		void porBloquesDeArchivo(ContenidoBloque * elementoInterno){
+			if(i%2==0){
+				ContenidoXNodo * hola = buscarNodoPorNombreS(elementoInterno->nodo);
+				if(hola==NULL){
+					a[i].a=0;
+				}else {
+					a[i].a=1;
+				}
+
+			}
+			else {//impar
+
+			ContenidoXNodo * hola = buscarNodoPorNombreS(elementoInterno->nodo);
+			if(hola==NULL){
+				a[i].b=0;
+			}else {
+				a[i].b=1;
+				}
+					}
+		}
+
+	 list_iterate(elemento->bloqueCopias,(void*)porBloquesDeArchivo);
+	 int j ;
+	 for(j=0;j<list_size(elemento->bloqueCopias);j++){
+		 if((a[j].a==0) && (a[j].b==1)){
+			 count++;
+		 }
+	 }
+
+	if(count==list_size(elemento->bloqueCopias)){
+		countGeneral++;
+	}
+	}
+	list_iterate(tablaArchivos,(void*)porArchivo);
+	if(countGeneral==list_size(tablaArchivos)){
+		return true;
+	}else {
+		return false;
+	}
+
+
+	}
+
+int main(int argc, char *argv[]) {
+
+	signal(SIGINT,matarTodo);
+
 	tablaNodos = list_create();
 	tablaArchivos = list_create();
 	listaDeBitMap = list_create();
-	listaDeNodosAnteriores = list_create();
-
+	listaDeNodosDeEstadoAnterior = list_create();
+	listaDeNodosDeFormateo=list_create();
+	listaDirectorios=list_create();
+	char * PUERTO;
+	logFs = log_create("../FileSystem.log", "FileSystem", 0, 0);
+	configFs = config_create("../config/configFilesystem.txt");
+	persistirNodos =config_create("../yamafs:/metadata/nodos.bin");
 	pthread_t hiloConsola;
-	configFs = config_create("/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/config/configFilesystem.txt");
-	persistirNodos =config_create("/home/utnso/workspace/tp-2017-2c-Mi-Grupo-1234/filesystem/metadata/nodos.bin");
-	PUERTO = config_get_string_value(configFs, "PUERTO_PROPIO");
-	pthread_create(&hiloConsola,NULL,(void*)IniciarConsola,NULL);
-	soyServidor(PUERTO);
-	pthread_join(hiloConsola, NULL);
-	free(PUERTO);
-	fclose(directorios);
-	fclose(nodos);
-	log_destroy(logFs);
+	estadoAnterior = config_get_int_value(configFs,"ESTADO_ANTERIOR");
+	estadoEstable = config_get_int_value(configFs,"ESTADO_ESTABLE");
+	if(argv[1]==NULL){
+		if(estadoAnterior==1){
+			//cargar estado anterior
+			//cargar directorios
+			//cargar archivos
+			cargarListaDeNodosAnteriores();
+			FILE * directorios = fopen("../yamafs:/metadata/directorios.dat", "a+");
+			FILE * nodos = fopen("../yamafs:/metadata/nodos.bin", "a+");
+			PUERTO = config_get_string_value(configFs, "PUERTO_PROPIO");
+			pthread_create(&hiloConsola,NULL,(void*)IniciarConsola,NULL);
+			soyServidor(PUERTO);
+			pthread_join(hiloConsola, NULL);
+
+		}else{
+			//se Ejecuta por primera vez
+			config_set_value(configFs,"ESTADO_ANTERIOR","1");
+			config_save(configFs);
+			inicializarCarpetas();
+			FILE * directorios = fopen("../yamafs:/metadata/directorios.dat", "w+");
+			FILE * nodos = fopen("../yamafs:/metadata/nodos.bin", "wb");
+			PUERTO = config_get_string_value(configFs, "PUERTO_PROPIO");
+			pthread_create(&hiloConsola,NULL,(void*)IniciarConsola,NULL);
+			soyServidor(PUERTO);
+			pthread_join(hiloConsola, NULL);
+		}
+	}
+	else{
+		if(!strcmp(argv[1], "--clean")){
+
+		printf("limpiame gato\n");
+		//elimino estructuras,carpetas y levanto
+
+		config_set_value(configFs,"ESTADO_ANTERIOR","0");
+		config_set_value(configFs,"ESTADO_ESTABLE","0");
+		config_save(configFs);
+		PUERTO = config_get_string_value(configFs, "PUERTO_PROPIO");
+		pthread_create(&hiloConsola,NULL,(void*)IniciarConsola,NULL);
+		soyServidor(PUERTO);
+		pthread_join(hiloConsola, NULL);
+		}
+		else {
+			printf("Argumento no valido para ejecutar el programa\n");
+			EXIT_FAILURE;
+		}
+	}
+
 	return 0;
 }
